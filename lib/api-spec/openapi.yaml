@@ -1,0 +1,930 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: BioSense - 생체신호 기반 평정심 회복 시스템 API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: Auth
+    description: Browser and mobile authentication endpoints.
+  - name: health
+    description: Health operations
+  - name: biosignals
+    description: Biosignal readings and history
+  - name: events
+    description: Detected health events
+  - name: recovery
+    description: Recovery sessions
+  - name: user
+    description: User profile and thresholds
+  - name: dashboard
+    description: Dashboard summary
+  - name: insights
+    description: AI-generated health insights
+  - name: simulation
+    description: Simulation controls for demo
+
+paths:
+  /auth/user:
+    get:
+      tags: [Auth]
+      operationId: getCurrentAuthUser
+      summary: Get the currently authenticated user
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+        - $ref: '#/components/parameters/SessionCookie'
+      responses:
+        '200':
+          description: Auth status resolved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserEnvelope'
+  /login:
+    get:
+      tags: [Auth]
+      operationId: beginBrowserLogin
+      summary: Start the browser OIDC login flow
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the OIDC authorization endpoint.
+  /callback:
+    get:
+      tags: [Auth]
+      operationId: handleBrowserLoginCallback
+      summary: Complete the browser OIDC login flow
+      responses:
+        '302':
+          description: Redirect to returnTo on success or /api/login on failure.
+  /logout:
+    get:
+      tags: [Auth]
+      operationId: logoutBrowserSession
+      summary: Clear the session and begin OIDC logout
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+        - $ref: '#/components/parameters/SessionCookie'
+      responses:
+        '302':
+          description: Redirect to the OIDC provider logout URL.
+  /mobile-auth/token-exchange:
+    post:
+      tags: [Auth]
+      operationId: exchangeMobileAuthorizationCode
+      summary: Exchange a mobile OIDC code for a session token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileTokenExchangeRequest'
+      responses:
+        '200':
+          description: Session created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileTokenExchangeSuccess'
+        '400':
+          description: Missing or invalid required fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Token did not contain usable claims.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: Token exchange failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /mobile-auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logoutMobileSession
+      summary: Delete a mobile session token
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+      responses:
+        '200':
+          description: Logout processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutSuccess'
+
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /biosignals/current:
+    get:
+      operationId: getCurrentBiosignal
+      tags: [biosignals]
+      summary: Get current biosignal reading
+      description: Returns the latest simulated biosignal reading with state classification
+      responses:
+        "200":
+          description: Current biosignal reading
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BiosignalReading"
+
+  /biosignals/history:
+    get:
+      operationId: getBiosignalHistory
+      tags: [biosignals]
+      summary: Get biosignal history
+      description: Returns time-series biosignal data for the last N minutes
+      parameters:
+        - name: minutes
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Number of minutes of history to return
+      responses:
+        "200":
+          description: List of biosignal readings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BiosignalReading"
+
+  /events:
+    get:
+      operationId: getEvents
+      tags: [events]
+      summary: Get detected events
+      description: Returns list of detected health events
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HealthEvent"
+
+  /events/summary:
+    get:
+      operationId: getEventsSummary
+      tags: [events]
+      summary: Get events summary statistics
+      description: Returns aggregated event statistics for the dashboard
+      responses:
+        "200":
+          description: Event summary statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventsSummary"
+
+  /events/{id}/feedback:
+    post:
+      operationId: submitEventFeedback
+      tags: [events]
+      summary: Submit user feedback for an event
+      description: User confirms or corrects the event classification, used for personalized learning
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventFeedbackBody"
+      responses:
+        "200":
+          description: Updated event with feedback
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthEvent"
+        "404":
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /recovery/sessions:
+    get:
+      operationId: getRecoverySessions
+      tags: [recovery]
+      summary: Get recovery sessions
+      description: Returns list of recovery sessions
+      responses:
+        "200":
+          description: List of recovery sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecoverySession"
+    post:
+      operationId: createRecoverySession
+      tags: [recovery]
+      summary: Start a recovery session
+      description: Creates a new recovery session for the user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRecoverySessionBody"
+      responses:
+        "201":
+          description: Created recovery session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoverySession"
+
+  /recovery/sessions/{id}/complete:
+    patch:
+      operationId: completeRecoverySession
+      tags: [recovery]
+      summary: Complete a recovery session
+      description: Marks a recovery session as complete with effectiveness rating
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteRecoverySessionBody"
+      responses:
+        "200":
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoverySession"
+        "404":
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /user/profile:
+    get:
+      operationId: getUserProfile
+      tags: [user]
+      summary: Get user profile
+      description: Returns the user's health profile and personalization settings
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+    put:
+      operationId: updateUserProfile
+      tags: [user]
+      summary: Update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserProfileBody"
+      responses:
+        "200":
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /user/thresholds:
+    get:
+      operationId: getUserThresholds
+      tags: [user]
+      summary: Get user's personalized thresholds
+      description: Returns the AI-learned thresholds for each signal type
+      responses:
+        "200":
+          description: User thresholds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserThresholds"
+    put:
+      operationId: updateUserThresholds
+      tags: [user]
+      summary: Update user thresholds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserThresholdsBody"
+      responses:
+        "200":
+          description: Updated thresholds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserThresholds"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary
+      description: Returns aggregated stats for the main dashboard
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /insights:
+    get:
+      operationId: getInsights
+      tags: [insights]
+      summary: Get personalized health insights
+      description: Returns AI-generated insights and recommendations based on user history
+      responses:
+        "200":
+          description: List of health insights
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HealthInsight"
+
+  /simulation/scenario:
+    post:
+      operationId: triggerSimulationScenario
+      tags: [simulation]
+      summary: Trigger a simulation scenario
+      description: Triggers a specific biosignal scenario for demo purposes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulationScenarioBody"
+      responses:
+        "200":
+          description: Scenario triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationScenarioResponse"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    BiosignalReading:
+      type: object
+      description: A single biosignal reading with all sensor channels
+      properties:
+        id:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+        heartRate:
+          type: number
+          description: Heart rate in BPM
+        hrv:
+          type: number
+          description: Heart rate variability in ms (RMSSD)
+        respiratoryRate:
+          type: number
+          description: Respiratory rate in breaths per minute
+        motionLevel:
+          type: number
+          description: Motion/accelerometer intensity 0-100
+        spo2:
+          type: number
+          description: Blood oxygen saturation percentage
+        skinTemperature:
+          type: number
+          description: Skin temperature in Celsius
+        stateClassification:
+          type: string
+          enum: [calm, stress, fatigue, anxiety, crisis, exercise, sleep, meeting]
+          description: AI-classified current state based on multi-signal analysis
+        emotionalDistress:
+          type: boolean
+          description: True when emotional distress is detected (HR elevated, motion normal/low)
+        contextualNote:
+          type: ["string", "null"]
+          description: Human-readable explanation of current state
+      required:
+        - id
+        - timestamp
+        - heartRate
+        - hrv
+        - respiratoryRate
+        - motionLevel
+        - spo2
+        - skinTemperature
+        - stateClassification
+        - emotionalDistress
+
+    HealthEvent:
+      type: object
+      description: A detected health event requiring attention or response
+      properties:
+        id:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+        eventType:
+          type: string
+          enum: [stress, fatigue, anxiety, crisis, panic, anger]
+          description: Type of emotional/psychological disturbance detected
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        heartRateAtEvent:
+          type: number
+        hrvAtEvent:
+          type: number
+        motionAtEvent:
+          type: number
+        contextSituation:
+          type: string
+          enum: [rest, meeting, exercise, sleep, driving, unknown]
+          description: Detected situational context at event time
+        detectionReason:
+          type: string
+          description: Explanation of why this event was detected
+        userFeedback:
+          type: ["string", "null"]
+          enum: ["correct", "incorrect_context", "false_alarm", null]
+        feedbackNote:
+          type: ["string", "null"]
+        resolved:
+          type: boolean
+        resolvedAt:
+          type: ["string", "null"]
+          format: date-time
+        recoverySessionId:
+          type: ["integer", "null"]
+      required:
+        - id
+        - timestamp
+        - eventType
+        - severity
+        - heartRateAtEvent
+        - hrvAtEvent
+        - motionAtEvent
+        - contextSituation
+        - detectionReason
+        - resolved
+
+    EventFeedbackBody:
+      type: object
+      properties:
+        feedback:
+          type: string
+          enum: [correct, incorrect_context, false_alarm]
+        note:
+          type: ["string", "null"]
+      required:
+        - feedback
+
+    EventsSummary:
+      type: object
+      properties:
+        totalEvents:
+          type: integer
+        todayEvents:
+          type: integer
+        byType:
+          type: object
+          additionalProperties:
+            type: integer
+        bySeverity:
+          type: object
+          additionalProperties:
+            type: integer
+        falseAlarmRate:
+          type: number
+          description: Percentage of events marked as false alarms
+        avgRecoveryTimeMinutes:
+          type: ["number", "null"]
+          description: Average time to resolve an event in minutes
+      required:
+        - totalEvents
+        - todayEvents
+        - byType
+        - bySeverity
+        - falseAlarmRate
+
+    RecoverySession:
+      type: object
+      description: A guided recovery session (breathing, grounding, etc.)
+      properties:
+        id:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+        sessionType:
+          type: string
+          enum: [box_breathing, diaphragmatic_breathing, grounding_5_4_3_2_1, progressive_muscle_relaxation, mindfulness_body_scan, cognitive_reframing]
+        durationSeconds:
+          type: ["integer", "null"]
+        effectivenessRating:
+          type: ["integer", "null"]
+          description: User-rated effectiveness 1-5
+        triggerEventId:
+          type: ["integer", "null"]
+          description: The event that prompted this session
+        hrBefore:
+          type: ["number", "null"]
+        hrAfter:
+          type: ["number", "null"]
+        completed:
+          type: boolean
+      required:
+        - id
+        - startedAt
+        - sessionType
+        - completed
+
+    CreateRecoverySessionBody:
+      type: object
+      properties:
+        sessionType:
+          type: string
+          enum: [box_breathing, diaphragmatic_breathing, grounding_5_4_3_2_1, progressive_muscle_relaxation, mindfulness_body_scan, cognitive_reframing]
+        triggerEventId:
+          type: ["integer", "null"]
+        hrBefore:
+          type: ["number", "null"]
+      required:
+        - sessionType
+
+    CompleteRecoverySessionBody:
+      type: object
+      properties:
+        effectivenessRating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        hrAfter:
+          type: ["number", "null"]
+      required:
+        - effectivenessRating
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        age:
+          type: ["integer", "null"]
+        baselineHeartRate:
+          type: number
+          description: User's resting heart rate baseline
+        baselineHrv:
+          type: number
+          description: User's baseline HRV
+        sensitivityLevel:
+          type: string
+          enum: [low, medium, high]
+          description: How sensitive the detection system should be
+        notificationMode:
+          type: string
+          enum: [subtle, moderate, assertive]
+          description: Notification intensity preference
+        emergencyContact:
+          type: ["string", "null"]
+        guardianPhone:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - baselineHeartRate
+        - baselineHrv
+        - sensitivityLevel
+        - notificationMode
+        - createdAt
+        - updatedAt
+
+    UpdateUserProfileBody:
+      type: object
+      properties:
+        name:
+          type: string
+        age:
+          type: ["integer", "null"]
+        baselineHeartRate:
+          type: number
+        baselineHrv:
+          type: number
+        sensitivityLevel:
+          type: string
+          enum: [low, medium, high]
+        notificationMode:
+          type: string
+          enum: [subtle, moderate, assertive]
+        emergencyContact:
+          type: ["string", "null"]
+        guardianPhone:
+          type: ["string", "null"]
+
+    UserThresholds:
+      type: object
+      description: Personalized AI-learned thresholds for event detection
+      properties:
+        id:
+          type: integer
+        hrStressThreshold:
+          type: number
+          description: HR above this (with low motion) triggers stress detection
+        hrCrisisThreshold:
+          type: number
+          description: HR above this triggers crisis alert
+        hrvStressThreshold:
+          type: number
+          description: HRV below this indicates stress
+        motionExerciseThreshold:
+          type: number
+          description: Motion above this + HR up = exercise, not stress
+        sustainedWindowSeconds:
+          type: integer
+          description: How many seconds signals must be sustained before triggering
+        learningIterations:
+          type: integer
+          description: Number of feedback cycles used to tune these thresholds
+        lastUpdated:
+          type: string
+          format: date-time
+      required:
+        - id
+        - hrStressThreshold
+        - hrCrisisThreshold
+        - hrvStressThreshold
+        - motionExerciseThreshold
+        - sustainedWindowSeconds
+        - learningIterations
+        - lastUpdated
+
+    UpdateUserThresholdsBody:
+      type: object
+      properties:
+        hrStressThreshold:
+          type: number
+        hrCrisisThreshold:
+          type: number
+        hrvStressThreshold:
+          type: number
+        motionExerciseThreshold:
+          type: number
+        sustainedWindowSeconds:
+          type: integer
+
+    DashboardSummary:
+      type: object
+      properties:
+        currentState:
+          type: string
+          enum: [calm, stress, fatigue, anxiety, crisis, exercise, sleep, meeting]
+        currentHeartRate:
+          type: number
+        currentHrv:
+          type: number
+        currentMotion:
+          type: number
+        equilibriumScore:
+          type: number
+          description: 0-100 score representing current emotional equilibrium
+        eventsLast24h:
+          type: integer
+        activeRecoverySession:
+          type: ["integer", "null"]
+          description: ID of ongoing recovery session if any
+        streakDays:
+          type: integer
+          description: Days without a crisis event
+        weeklyTrend:
+          type: string
+          enum: [improving, stable, declining]
+      required:
+        - currentState
+        - currentHeartRate
+        - currentHrv
+        - currentMotion
+        - equilibriumScore
+        - eventsLast24h
+        - streakDays
+        - weeklyTrend
+
+    HealthInsight:
+      type: object
+      properties:
+        id:
+          type: integer
+        category:
+          type: string
+          enum: [pattern, trigger, recommendation, achievement, threshold]
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: string
+          enum: [low, medium, high]
+        generatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - category
+        - title
+        - description
+        - priority
+        - generatedAt
+
+    SimulationScenarioBody:
+      type: object
+      properties:
+        scenario:
+          type: string
+          enum: [calm, stress, exercise, anxiety_spike, panic_attack, fatigue, sleep, meeting]
+          description: The scenario to simulate
+      required:
+        - scenario
+
+    SimulationScenarioResponse:
+      type: object
+      properties:
+        scenario:
+          type: string
+        message:
+          type: string
+        activated:
+          type: boolean
+      required:
+        - scenario
+        - message
+        - activated
+
+    AuthUser:
+      type: object
+      required: [id, email, firstName, lastName, profileImageUrl]
+      properties:
+        id:
+          type: string
+        email:
+          type: [string, 'null']
+          format: email
+        firstName:
+          type: [string, 'null']
+        lastName:
+          type: [string, 'null']
+        profileImageUrl:
+          type: [string, 'null']
+    AuthUserEnvelope:
+      type: object
+      required: [user]
+      properties:
+        user:
+          oneOf:
+            - $ref: '#/components/schemas/AuthUser'
+            - type: 'null'
+    MobileTokenExchangeRequest:
+      type: object
+      required: [code, code_verifier, redirect_uri, state]
+      properties:
+        code:
+          type: string
+          minLength: 1
+        code_verifier:
+          type: string
+          minLength: 1
+        redirect_uri:
+          type: string
+          minLength: 1
+          format: uri
+        state:
+          type: string
+          minLength: 1
+        nonce:
+          type: string
+          minLength: 1
+    MobileTokenExchangeSuccess:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    LogoutSuccess:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          const: true
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+  parameters:
+    AuthorizationSessionHeader:
+      name: Authorization
+      in: header
+      required: false
+      description: Opaque session token — `Bearer <sid>`.
+      schema:
+        type: string
+    SessionCookie:
+      name: sid
+      in: cookie
+      required: false
+      description: Browser session cookie.
+      schema:
+        type: string
