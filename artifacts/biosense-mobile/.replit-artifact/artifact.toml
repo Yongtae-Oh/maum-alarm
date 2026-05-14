@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/mobile/"
+title = "BioSense Mobile"
+version = "1.0.0"
+id = "artifacts/biosense-mobile"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/mobile/" ]
+localPort = 24438
+
+[services.development]
+run = "pnpm --filter @workspace/biosense-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/biosense-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/biosense-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "24438"
+BASE_PATH = "/mobile/"
